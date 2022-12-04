@@ -1,7 +1,6 @@
 import numpy as np
 import random
 
-from datasets.BTCVDataset import BTCVDataset
 import GeodisTK
 from scipy import ndimage
 
@@ -115,38 +114,6 @@ def extends_points(seed):
     return points.astype(np.uint8)
 
 
-def QImageToCvMat(incomingImage):
-    '''
-    Converts a QImage into an opencv MAT format
-    from https://stackoverflow.com/questions/19902183/qimage-to-numpy-array-using-pyside
-    '''
-
-    incomingImage = incomingImage.convertToFormat(QtGui.QImage.Format.Format_RGB32)
-
-    width = incomingImage.width()
-    height = incomingImage.height()
-
-    ptr = incomingImage.constBits()
-    arr = np.array(ptr).reshape(height, width, 4)  # Copies the data
-    return arr
-
-
-def QImageToGrayCvMat(incomingImage):
-    '''
-    Converts a QImage into an opencv MAT format
-    from https://stackoverflow.com/questions/19902183/qimage-to-numpy-array-using-pyside
-    '''
-
-    incomingImage = incomingImage.convertToFormat(QtGui.QImage.Format.Format_Grayscale8)
-
-    width = incomingImage.width()
-    height = incomingImage.height()
-
-    ptr = incomingImage.constBits()
-    arr = np.array(ptr).reshape(height, width)  # Copies the data
-    return arr
-
-
 
 
 def itensity_normalization(image):
@@ -218,6 +185,7 @@ def interaction_refined_geodesic_distance(img, seed, threshold=0):
         geo_dis = np.zeros_like(img, dtype=np.float32)
     return geo_dis
 if __name__ == '__main__':
+    from datasets.BTCVDataset import BTCVDataset
     import matplotlib.pyplot as plt
     ep = ExtremePoints()
     train = BTCVDataset(
