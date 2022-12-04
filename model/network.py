@@ -8,6 +8,18 @@
 
 import torch
 import torch.nn as nn
+import numpy as np
+
+
+def initialize_weights(param):
+    class_name = param.__class__.__name__
+    if class_name.startswith('Conv'):
+        # Initialization according to original Unet paper
+        # See https://arxiv.org/pdf/1505.04597.pdf
+        _, in_maps, k, _ = param.weight.shape
+        n = k * k * in_maps
+        std = np.sqrt(2 / n)
+        nn.init.normal_(param.weight.data, mean=0.0, std=std)
 
 
 def conv_block(in_dim, out_dim, act_fn):
@@ -82,7 +94,7 @@ class UNet(nn.Module):
         self.trans_3 = up_conv(self.num_filter * 4,
                                self.num_filter * 4, act_fn)
         self.up_3 = double_conv_block(
-            self.num_filter * 6, self.num_filter*2, act_fn)
+            self.num_filter * 6, self.num_filter * 2, act_fn)
 
         self.trans_4 = up_conv(self.num_filter * 2,
                                self.num_filter * 2, act_fn)

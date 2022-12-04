@@ -38,7 +38,10 @@ class BTCVDataset(Dataset):
             transformed = self.transform(image=img_np, mask=mask_np)
             img_np = transformed['image']
             mask_np = transformed['mask']
+        if np.sum(mask_np) < 20:
+            return torch.zeros(2, 96, 96), torch.zeros(96, 96)
         # show(img_np, "transform_img")
+        # show(mask_np, "transform_mask")
         # 提取extrem points
         extre_points = self.extreme_points(mask_np)
         # show_seed(np.zeros_like(mask_np), extre_points, "extre_points")
@@ -49,6 +52,7 @@ class BTCVDataset(Dataset):
         seeds = self.point2img(np.zeros_like(mask_np), extre_points, sim_points)
         # 生成bbox
         bbox = self.create_bbox(mask_np)
+        self.resolve_bbox(mask_np.shape, bbox)
         # show_bbox(bbox, mask_np)
         # show_bbox(bbox, img_np, title="img_np")
         # 裁剪图片、mask、点击图
@@ -58,16 +62,18 @@ class BTCVDataset(Dataset):
         # show(crop_img, "crop_img")
         # show(crop_mask, "crop_mask")
         # show(cropped_seed, "cropped_seed")
-
+        # print(crop_img.shape)
+        # print(bbox)
         norm_img = itensity_normalization(crop_img)
         # show(norm_img, "norm_img")
         cropped_geos = interaction_geodesic_distance(
             norm_img, cropped_seed)
         # show(cropped_geos, "cropped_geos")
         # 放大到96x96
+        zoom_mask = zoom_image(crop_mask, (96, 96))
         zoomed_img, zoomed_geos = zoom_image(norm_img, (96, 96)), zoom_image(cropped_geos, (96, 96))
-        input = np.asarray([[zoomed_img, zoomed_geos]])
-        return torch.from_numpy(input.copy()), torch.from_numpy(crop_mask.copy()).long()
+        input = np.stack([zoomed_img, zoomed_geos])
+        return  torch.from_numpy(input), torch.from_numpy(zoom_mask).long()
 
     def point2img(self, seeds, points, sim_points):
         for (x, y) in points:
@@ -84,7 +90,7 @@ class BTCVDataset(Dataset):
 
     def random_select_points(self, mask):
         data = np.array(mask, dtype=np.uint8)
-        kernel = np.ones((7, 7), np.uint8)
+        kernel = np.ones((5, 5), np.uint8)
         erode_data = cv2.erode(data, kernel, iterations=1)
         # show(erode_data, "erode_img")
         dilate_data = cv2.dilate(data, kernel, iterations=1)
@@ -115,6 +121,12 @@ class BTCVDataset(Dataset):
 
     def __len__(self):
         return len(self.data_paths)
+
+    def resolve_bbox(self, shape, bbox):
+        if bbox[0] < 0: bbox[0] = 0
+        if bbox[1] > shape[0]: bbox[1] = shape[0]
+        if bbox[2] < 0: bbox[2] = 0
+        if bbox[3] > shape[1]: bbox[3] = shape[1]
 
 
 def save(img, filename):
@@ -222,11 +234,19 @@ if __name__ == '__main__':
 
 
     def test4():
+        transform = A.Compose([
+            A.RandomCrop(416, 416),
+            A.Rotate(),
+            A.RandomScale(),
+            A.HorizontalFlip(),
+            A.VerticalFlip(),
+        ])
         train = BTCVDataset(
             datafolder="/data/home/yeep/Desktop/graduate/research/annotation/code/TrainMiDeep2d/datasets/data/train",
+            transform=transform
         )
         _, (im, label) = next(enumerate(train))
-        print(1)
+        pass
 
 
     test4()
