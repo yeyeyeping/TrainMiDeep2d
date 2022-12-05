@@ -72,19 +72,21 @@ def get_slice(index, fname):
     return np.asarray(np.rot90(data[:, :, index]))
 
 
-# labelpath = "/media/yeep/7fd96b65-0eb2-4193-9f7c-b353a0971045/graduate/research/annotation/datasets/BTCV/labelsTr/label0001.nii.gz"
-# imgpath = "/media/yeep/7fd96b65-0eb2-4193-9f7c-b353a0971045/graduate/research/annotation/datasets/BTCV/imagesTr/img0001.nii.gz"
-# img = get_slice(73, imgpath)
-# label = get_slice(73, labelpath)
-# out = cv2.normalize(img, dst=None, norm_type=cv2.NORM_MINMAX)
-# cv2.imwrite("1.png", (out * 255).astype(np.uint8))
-# logging.error(f"area:{np.sum(label == 0)}")
-# cv2.imwrite("2.png", ((label == 8) * 255).astype(np.uint8))
-import cv2
+labelpath = "/media/yeep/7fd96b65-0eb2-4193-9f7c-b353a0971045/graduate/research/annotation/datasets/BTCV/labelsTr/label0001.nii.gz"
+imgpath = "/media/yeep/7fd96b65-0eb2-4193-9f7c-b353a0971045/graduate/research/annotation/datasets/BTCV/imagesTr/img0001.nii.gz"
+img = get_slice(73, imgpath)
+label = get_slice(73, labelpath)
+out = cv2.normalize(img, dst=None, norm_type=cv2.NORM_MINMAX)
+cv2.imwrite("1.png", (out * 255).astype(np.uint8))
+logging.error(f"area:{np.sum(label == 0)}")
+cv2.imwrite("2.png", (label* 255).astype(np.uint8))
 
-img = cv2.imread("1.png")
-plt.imshow(img)
-plt.show()
+
+# import cv2
+#
+# img = cv2.imread("1.png")
+# plt.imshow(img)
+# plt.show()
 
 # cv2.imshow("1", )
 # cv2.waitKey(0)

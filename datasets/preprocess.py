@@ -19,7 +19,7 @@ def load_json(folder):
     return json.loads(datasetjson)
 
 
-def select_image(fpath: list, keep_mask: int, output_dir, num_per_volume=6, min_area=5 * 5):
+def select_image(fpath: list, keep_mask: int, label, output_dir, num_per_volume=6, min_area=5 * 5):
     '''
     :param fpath:list类型，要处理的所有nfti的文件路径的list
     :param keep_mask: 提取keep_mask对应的标签
@@ -39,8 +39,8 @@ def select_image(fpath: list, keep_mask: int, output_dir, num_per_volume=6, min_
             rand_slice = random.randint(0, max_slice - 1)
             filemame = "%s_%s" % (basename(img_path).split(".")[0], rand_slice)
             mask_save_path, img_save_path = \
-                join(output_dir, "mask", filemame) + ".png", \
-                join(output_dir, "img", filemame) + ".png"
+                join(output_dir, f"mask_{label}", filemame) + ".png", \
+                join(output_dir, f"img_{label}", filemame) + ".png"
             # 路径下有这个图片，说明随机数抽重复了，跳过本次重新抽
             if os.path.exists(mask_save_path) or os.path.exists(img_save_path):
                 continue
@@ -64,6 +64,8 @@ def select_image(fpath: list, keep_mask: int, output_dir, num_per_volume=6, min_
             img2d = np.rot90((img2d * 255)).astype(np.uint8)
             cv2.imwrite(img_save_path, img2d)
             logging.info("write img to %s" % img_save_path)
+
+
 if __name__ == '__main__':
     if not os.path.exists("data/train/mask"):
         os.makedirs("data/train/mask")
@@ -77,14 +79,11 @@ if __name__ == '__main__':
     if not os.path.exists("data/val/img"):
         os.makedirs("data/val/img")
 
-
     jsondes = load_json(data_folder)
     train_list, val_list = jsondes["training"], jsondes["validation"]
     test_list = jsondes["test"]
     spleen_label = -1
     for (key, value) in jsondes["labels"].items():
-        if value == "spleen":
-            spleen_label = int(key)
-    select_image(jsondes["training"], output_dir="data/train", keep_mask=spleen_label)
-    select_image(jsondes["validation"], output_dir="data/val", keep_mask=spleen_label)
-    logging.info(_min_area)
+        select_image(jsondes["training"], output_dir="data/train", keep_mask=key, label=value)
+        select_image(jsondes["validation"], output_dir="data/val", keep_mask=key, label=value)
+        logging.info(_min_area)

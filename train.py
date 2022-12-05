@@ -1,8 +1,9 @@
 import argparse
 import os
 import random
+import time
 from os.path import join, exists
-
+from model.metrics import AverageMeter, eval_metrics
 import numpy as np
 import torch
 from torch.nn import Softmax
@@ -26,11 +27,6 @@ def get_logger(fpath):
     logger.setLevel(logging.INFO)
 
     formatter = logging.Formatter('%(asctime)s %(message)s')
-
-    # 设置屏幕打印的格式
-    sh = logging.StreamHandler()
-    sh.setFormatter(formatter)
-    logger.addHandler(sh)
 
     timestamp = datetime.datetime.timestamp(datetime.datetime.now())
     # 设置log保存
@@ -74,6 +70,17 @@ def get_lambda(batch_size, data_size, baselr):
     return lr_lambda
 
 
+def get_seg_metrics(total_correct, total_label, total_inter, total_union, num_classes):
+    pixAcc = 1.0 * total_correct / (np.spacing(1) + total_label)
+    IoU = 1.0 * total_inter / (np.spacing(1) + total_union)
+    mIoU = IoU.mean()
+    return {
+        "Pixel_Accuracy": np.round(pixAcc, 3),
+        "Mean_IoU": np.round(mIoU, 3),
+        "Class_IoU": dict(zip(range(num_classes), np.round(IoU, 3)))
+    }
+
+
 def main():
     arg = parse_arg()
     if not exists(arg.log):
@@ -95,16 +102,22 @@ def main():
     train_path, test_path = join(arg.data_folder, "train"), join(arg.data_folder, "val")
     train_dataset, test_dataset = BTCVDataset(train_path, transform=transform), BTCVDataset(test_path),
     train_loder, test_loader = DataLoader(train_dataset, batch_size=arg.batch_size, shuffle=True), DataLoader(
-        test_dataset)
+        test_dataset, batch_size=arg.batch_size)
 
     network = UNet(2, 2, 16).to(arg.devices)
     network.apply(initialize_weights)
     opt = Adam(network.parameters(), lr=arg.lr, weight_decay=arg.weight_decay)
-    sched = CosineAnnealingLR(opt, T_max=len(train_dataset) / arg.batch_size * arg.epoch,eta_min=1e-7,)
+    sched = CosineAnnealingLR(opt, T_max=len(train_dataset) / arg.batch_size * arg.epoch, eta_min=1e-7, )
     criterion = DiceLoss(num_classes=2)
+
     for epoch in range(arg.epoch):
+        total_correct, total_label, total_inter, total_union = 0, 0, 0, 0
+        eval_loss, train_loss, batch_time, data_time = AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()
         network.train()
-        for batch_id, (img, mask) in enumerate(tqdm(train_loder)):
+        tbar = tqdm(train_loder)
+        tlc = time.time()
+        for batch_id, (img, mask) in enumerate(tbar):
+            data_time.update(time.time() - tlc)
             img, mask = img.to(arg.devices), mask.to(arg.devices)
             output: torch.Tensor = network(img)
             output = torch.softmax(output, dim=1)
@@ -113,33 +126,63 @@ def main():
             loss.backward()
             opt.step()
             sched.step()
+
+            train_loss.update(loss.cpu().item())
+            batch_time.update(time.time() - tlc)
+            tlc = time.time()
+            seg_metrics = eval_metrics(output.detach().cpu(), mask.detach().cpu(), 2)
+
+            total_correct += seg_metrics[0]
+            total_label += seg_metrics[1]
+            total_inter += seg_metrics[2]
+            total_union += seg_metrics[3]
+
+            pixAcc, mIoU, _ = get_seg_metrics(total_correct, total_label, total_inter, total_union, 2).values()
+            tbar.set_description(
+                f"TRAIN {epoch}| Loss:{loss.cpu().item():.3f} PixelAcc: {pixAcc:.2f} Mean IoU: {mIoU:.2f} |B {batch_time.average:.2f} |D {data_time.average:.2f}")
+
             if batch_id % 10 == 0:
-                logger.info(f"epoch {epoch}, batch_id:{batch_id}, loss:{loss.cpu().item():.3f}")
                 niter = epoch * len(train_dataset) + batch_id
-                writer.add_scalar("Train/loss", loss.cpu().item(), niter)
+                writer.add_scalar("Train/loss", train_loss.average, niter)
+                writer.add_scalar("Train/pixAcc", pixAcc, niter)
+                writer.add_scalar("Train/mIoU", mIoU, niter)
+
                 pred = output.detach().cpu() > 0.5
                 pred = torch.argmax(torch.as_tensor(pred, dtype=torch.int), dim=1)
                 image_grid = make_grid(tensor=torch.from_numpy(np.expand_dims(pred, axis=1).repeat(3, axis=1)),
                                        nrow=arg.batch_size)
                 writer.add_image("Train/pred", image_grid, niter)
-
                 img = np.expand_dims(img[:, 0, :, :].cpu().numpy(), axis=1).repeat(3, axis=1)
                 mask = np.expand_dims(mask.cpu().numpy(), axis=1).repeat(3, axis=1)
                 img_mask = np.concatenate([img, mask])
                 raw_imgs = make_grid(tensor=torch.from_numpy(img_mask), nrow=arg.batch_size)
                 writer.add_image("Train/raw", raw_imgs, niter)
 
+        logger.info(f"epoch {epoch},  Loss:{train_loss.average:.3f}  PixelAcc: {pixAcc:.2f},Mean IoU: {mIoU:.2f}")
         network.eval()
+
         with torch.no_grad():
-            avg_dice = 0.0
-            for _, (img_t, mask_t) in enumerate(test_loader):
+            total_correct, total_label, total_inter, total_union = 0, 0, 0, 0
+            tbar = tqdm(test_loader)
+            for _, (img_t, mask_t) in enumerate(tbar):
                 img_t, mask_t = img_t.to(arg.devices), mask_t.to(arg.devices)
                 output = torch.softmax(network(img_t), dim=1)
                 dice = 1 - criterion(output, mask_t)
-                avg_dice += dice.cpu().item()
-            avg_dice /= len(test_dataset)
-            logger.info(f"epoch {epoch}, dice:{avg_dice:.3f}")
-            writer.add_scalar("Test/dice", avg_dice, epoch)
+                eval_loss.update(dice.cpu().item())
+
+                seg_metrics = eval_metrics(output.detach().cpu(), mask_t.detach().cpu(), 2)
+                total_correct += seg_metrics[0]
+                total_label += seg_metrics[1]
+                total_inter += seg_metrics[2]
+                total_union += seg_metrics[3]
+                pixAcc, mIoU, _ = get_seg_metrics(total_correct, total_label, total_inter, total_union, 2).values()
+                tbar.set_description(
+                    f"EVAl {epoch}| Dice:{eval_loss.average:.3f} PixelAcc: {pixAcc:.2f} Mean IoU: {mIoU:.2f}")
+            logger.info(f"epoch {epoch}, dice:{eval_loss.average:.3f}")
+            writer.add_scalar("Test/dice", eval_loss.average, epoch)
+            writer.add_scalar("Test/pixAcc", pixAcc, niter)
+            writer.add_scalar("Test/mIoU", mIoU, niter)
+
         if epoch % 50 == 0:
             checkpointpth = join(arg.checkpoint, f"epoch{epoch}_checkpoint_avg_dice{dice}.pth")
             torch.save(network.state_dict(), checkpointpth)

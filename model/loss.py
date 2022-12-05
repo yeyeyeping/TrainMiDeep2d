@@ -39,7 +39,7 @@ class DiceLoss(nn.Module):
         Exception if unexpected reduction
     """
 
-    def __init__(self, smooth=1, p=2, reduction='mean', num_classes=2):
+    def __init__(self, smooth=1e-6, p=1, reduction='mean', num_classes=2):
         super(DiceLoss, self).__init__()
         self.smooth = smooth
         self.p = p
@@ -52,8 +52,8 @@ class DiceLoss(nn.Module):
         target = make_one_hot(target, self.num_classes)
         target = target.view(target.shape[0], -1).to(predict.device)
 
-        num = torch.sum(torch.mul(predict, target), dim=1) + self.smooth
-        den = torch.sum(predict.pow(self.p) + target.pow(self.p), dim=1) + self.smooth
+        num = torch.sum(torch.mul(predict, target)) * 2 + self.smooth
+        den = torch.sum(predict.pow(self.p) + target.pow(self.p)) + self.smooth
 
         loss = 1 - num / den
 
@@ -65,4 +65,3 @@ class DiceLoss(nn.Module):
             return loss
         else:
             raise Exception('Unexpected reduction {}'.format(self.reduction))
-
