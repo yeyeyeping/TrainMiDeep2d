@@ -24,7 +24,7 @@ def make_one_hot(input, num_classes):
     return result
 
 
-class BinaryDiceLoss(nn.Module):
+class DiceLoss(nn.Module):
     """Dice loss of binary class
     Args:
         smooth: A float number to smooth loss, and avoid NaN error, default: 1
@@ -40,7 +40,7 @@ class BinaryDiceLoss(nn.Module):
     """
 
     def __init__(self, smooth=1, p=2, reduction='mean', num_classes=2):
-        super(BinaryDiceLoss, self).__init__()
+        super(DiceLoss, self).__init__()
         self.smooth = smooth
         self.p = p
         self.reduction = reduction
@@ -50,7 +50,7 @@ class BinaryDiceLoss(nn.Module):
         assert predict.shape[0] == target.shape[0], "predict & target batch size don't match"
         predict = predict.contiguous().view(predict.shape[0], -1)
         target = make_one_hot(target, self.num_classes)
-        target = target.view(target.shape[0], -1)
+        target = target.view(target.shape[0], -1).to(predict.device)
 
         num = torch.sum(torch.mul(predict, target), dim=1) + self.smooth
         den = torch.sum(predict.pow(self.p) + target.pow(self.p), dim=1) + self.smooth
